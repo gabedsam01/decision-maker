@@ -60,3 +60,9 @@ Regra de evidência: nenhuma afirmação de teste/build/edição sem a saída da
 3. `docs/tools-complemento.md` — nota interna ainda no repo público.
 4. Política de timeout P3.21 (timeout de evaluate no Laya).
 5. Refresh do README/GETTING_STARTED com o novo ciclo de vida (fluxo funciona; docs ainda descrevem o comportamento antigo em pontos pontuais).
+
+## Etapa 6 — Commit, PR e CI
+
+- Guard local (guard-git) bloqueou commit direto no `main` → fluxo padrão: branch `feat/session-lifecycle` + commit `feat: session lifecycle daemon, audit fixes, and npm/PyPI packaging` + push.
+- `gh` tinha a conta ativa errada (`gabrielsampaiosouza`, sem acesso ao repo) → `gh auth switch --user gabedsam01` e **PR #1**: https://github.com/gabedsam01/decision-maker/pull/1 (CI disparado por `pull_request`: pytest 3.11/3.12/3.13 · ruff · mypy · node · `uv lock --check` · smoke do wheel).
+- `workflow_dispatch` adicionado ao ci.yml para trigger manual; README: `engine.init()` inexistente corrigido para `initialize()` + comandos `start`/`status`/`kill` (itens 5 e parcialmente 1 da lista de adiados resolvidos aqui).
