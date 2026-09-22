@@ -56,7 +56,6 @@ class LayaProvider:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._router: Any | None = None
-        self._loaded_for_init: str | None = None
 
     def _laya(self) -> Any:
         try:
@@ -147,13 +146,15 @@ class LayaProvider:
 
             probe_file = max(siblings, key=lambda item: item[1])[0]
             url = hub.hf_hub_url(str(repo), probe_file)
+            if not url.startswith("https://"):
+                raise ProviderError("Model size probe must use https.")
             request = urllib.request.Request(
                 url,
                 headers={"Range": "bytes=0-1048575", "User-Agent": "decisors/0.1"},
             )
             started = time.perf_counter()
             timeout = min(self.settings.timeout_seconds, 15.0)
-            with urllib.request.urlopen(request, timeout=timeout) as response:
+            with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
                 sample = response.read(1024 * 1024)
             elapsed = time.perf_counter() - started
             if len(sample) >= 64 * 1024 and elapsed > 0:
@@ -187,7 +188,6 @@ class LayaProvider:
                 },
             }
             router.predict(self._warmup_state(), warmup_questions, model=target)
-            self._loaded_for_init = target
         except Exception as exc:
             raise ProviderError(f"Could not prepare Laya model: {type(exc).__name__}.") from exc
         elapsed_ms = round((time.perf_counter() - start) * 1000)
@@ -218,14 +218,13 @@ class LayaProvider:
             with suppress(Exception):
                 self._router.unload()
         self._router = None
-        self._loaded_for_init = None
         gc.collect()
         try:
             torch = importlib.import_module("torch")
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
         except Exception:
-            pass
+            pass  # nosec B110  # best-effort GPU cache clear
 
     def status(self) -> dict[str, Any]:
         loaded: list[str] = []

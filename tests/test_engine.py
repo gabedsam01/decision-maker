@@ -98,3 +98,55 @@ def test_probe_does_not_initialize(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     assert result["recommended"] == "cpu"
     assert engine.settings.initialized is False
     assert not (tmp_path / "config.toml").exists()
+
+
+def test_engine_status_follows_credential_store(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    engine = DecisionEngine(ConfigStore(tmp_path / "config.toml"))
+    engine.configure(provider="openrouter")
+    assert engine.status()["provider_status"]["ready"] is False
+
+    auth = tmp_path / ".pi" / "agent" / "auth.json"
+    auth.parent.mkdir(parents=True)
+    auth.write_text('{"openrouter": {"key": "from-file"}}', encoding="utf-8")
+    assert engine.status()["provider_status"]["ready"] is True
+
+
+def test_referee_local_reuses_one_loaded_judge(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created: list[FakeLaya] = []
+
+    class FakeJudge(FakeLaya):
+        def evaluate(self, request: Any) -> dict[str, Any]:
+            qid = next(iter(request.questions))
+            text = request.questions[qid]["instructions"]
+            score = 0.9 if "alpha" in text else 0.3
+            return {
+                "provider": "laya",
+                "model": "fake",
+                "usage": {"input_tokens": 3, "output_tokens": 0},
+                "answers": {qid: {"type": "noul", "noul": score}},
+            }
+
+    def factory(settings: Any) -> FakeLaya:
+        fake = FakeJudge(settings)
+        created.append(fake)
+        return fake
+
+    monkeypatch.setattr(engine_module, "LayaProvider", factory)
+    engine = DecisionEngine(ConfigStore(tmp_path / "config.toml"))
+    engine.configure(provider="openrouter")
+
+    for _ in range(2):
+        picked = engine.referee("conclude", {"options": ["alpha", "beta"]})
+        assert picked["choice"] == "alpha"
+
+    assert len(created) == 1
+    engine.stop()
+    assert created[0].stopped is True

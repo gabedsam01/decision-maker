@@ -1,0 +1,43 @@
+{
+  "name": "decisors",
+  "version": "0.1.0",
+  "description": "Typed System One decisions for AI agents — Pi adapter and installer for the decisors binary (Laya local by default, Jev via TypeSafe/OpenRouter).",
+  "type": "module",
+  "bin": {
+    "decisors-pi": "./install.mjs"
+  },
+  "scripts": {
+    "postinstall": "node install.mjs",
+    "test": "node --test tests/test_panel_keys.mjs",
+    "pack:check": "npm pack --dry-run"
+  },
+  "files": [
+    "install.mjs",
+    "src/decisors/integrations/pi-extension.js",
+    "src/decisors/integrations/skills/decisores-decisoes/SKILL.md",
+    "src/decisors/integrations/prompts/juiz.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "decisions",
+    "laya",
+    "jev",
+    "system-one",
+    "pi"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gabedsam01/decision-maker.git"
+  },
+  "homepage": "https://github.com/gabedsam01/decision-maker#readme",
+  "bugs": {
+    "url": "https://github.com/gabedsam01/decision-maker/issues"
+  }
+}

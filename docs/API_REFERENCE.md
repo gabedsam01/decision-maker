@@ -172,3 +172,16 @@ The bridge mode (`decisors bridge`) communicates over standard input/output usin
 ```json
 {"id": "1", "ok": false, "error": {"type": "ValidationError", "message": "Description..."}}
 ```
+
+---
+
+## 5. Request Limits
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `MAX_QUESTIONS` | 32 | Questions per request (independent questions are batched). |
+| `MAX_INPUT_BYTES` | 64 KB | Serialized `state + questions` payload. |
+| `MAX_INSTRUCTIONS` | 4 000 chars | Per question instructions. |
+| `MAX_CHOICE_OPTIONS` | 255 | Options per choice (cloud cap). Local Laya rounds cap at 20 options (tournament above that). |
+| `MAX_SCORE_LEVELS` | 10 | Ordered levels per score. |
+| `MAX_QUESTION_ID` | 128 chars | Question id length. |

@@ -56,6 +56,9 @@ cd decision-maker
 uv sync --extra dev
 uv tool install .
 decisors integrate pi
+decisors start         # Background daemon + warm-up (non-blocking; Pi auto-restarts it)
+decisors status        # Live daemon status (or config-only when the daemon is off)
+decisors kill          # Graceful shutdown (--force = SIGKILL via pidfile)
 ```
 
 ---
@@ -96,8 +99,8 @@ Decisors integrates directly with **Pi**:
 from decisors.engine import DecisionEngine
 
 engine = DecisionEngine()
-engine.init()
-engine.start()
+engine.initialize()
+engine.start()  # or engine.start_async() for non-blocking warm-up
 
 # Evaluate narrow questions over state
 result = engine.evaluate(

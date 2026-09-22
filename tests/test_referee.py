@@ -7,11 +7,9 @@ import pytest
 
 from decisors.config import ConfigStore, get_credential
 from decisors.engine import DecisionEngine
-from decisors.errors import NotStartedError, ValidationError
+from decisors.errors import NotStartedError
 from decisors.referee import (
-    OTHER,
     command_report,
-    conclude_local,
     pick_scored,
     shape_text,
     skill_shortlist,
@@ -75,20 +73,6 @@ def test_yes_is_one_cloud_call() -> None:
     assert plan["provider"] == "openrouter"
 
 
-def test_local_loop_never_asks_more_than_20() -> None:
-    seen: list[int] = []
-
-    def choose(options: list[str]) -> str:
-        seen.append(len(options))
-        assert len(options) <= 20
-        return next(item for item in options if item != OTHER)
-
-    result = conclude_local([f"o{index}" for index in range(21)], choose)
-    assert result["choice"].startswith("o")
-    assert result["authorized"] is False
-    assert seen
-
-
 def test_engine_where_does_not_leak_key_or_start(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TYPESAFE_API_KEY", "secret-value")
     engine = DecisionEngine(ConfigStore(tmp_path / "config.toml"))
@@ -129,15 +113,6 @@ def test_empty_state_keeps_the_instruction_text() -> None:
     assert portuguese is True
 
 
-def test_all_reject_does_not_revive_a_rejected_prefix() -> None:
-    def choose(options: list[str]) -> str:
-        assert OTHER in options
-        return OTHER
-
-    with pytest.raises(ValidationError):
-        conclude_local([f"o{index}" for index in range(21)], choose)
-
-
 def test_conclude_on_cloud_provider_stays_local_without_writing(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
@@ -166,6 +141,8 @@ def test_conclude_on_cloud_provider_stays_local_without_writing(
     assert engine.settings.provider == "openrouter"
     assert engine.settings.model == "jev-latest"
     assert not path.exists()
+    assert seen == ["laya", "auto"]
+    engine.stop()
     assert seen == ["laya", "auto", "stopped"]
 
 

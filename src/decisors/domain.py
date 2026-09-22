@@ -13,6 +13,7 @@ JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 QuestionType = Literal["choice", "score", "noul"]
 
 MAX_QUESTIONS = 32
+MAX_QUESTION_ID = 128
 MAX_INPUT_BYTES = 64 * 1024
 MAX_INSTRUCTIONS = 4_000
 MAX_CHOICE_OPTIONS = 255
@@ -75,7 +76,7 @@ def _normalize_questions(value: Any) -> dict[str, Question]:
 
     result: dict[str, Question] = {}
     for raw_id, raw_question in value.items():
-        if not isinstance(raw_id, str) or not raw_id.strip() or len(raw_id) > 128:
+        if not isinstance(raw_id, str) or not raw_id.strip() or len(raw_id) > MAX_QUESTION_ID:
             raise ValidationError("Each question id must be a non-empty string up to 128 characters.")
         if not isinstance(raw_question, dict):
             raise ValidationError(f"Question {raw_id!r} must be an object.")

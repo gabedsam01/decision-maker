@@ -32,7 +32,7 @@ Decisors provides an optimized, native integration for [Pi](https://github.com/b
 ### Key Engineering Tenets in Pi:
 1. **Persistent Bridge**: The Python process starts once upon session initialization and remains alive. Model weights are never reloaded per tool call.
 2. **Stderr Draining**: Background model-download progress or Hugging Face warning streams on `stderr` are actively drained to eliminate any risk of pipe deadlock.
-3. **Automatic Credential Forwarding**: Decisors reads `~/.pi/agent/auth.json` and forwards keys to the bridge without writing secrets to persistent files or exposing them in logs.
+3. **Thin Adapter, Single Credential Source**: Only the Python core resolves credentials (environment variables and the `auth.json` store). The JS adapter never reads secrets — it just starts the bridge, which inherits the environment.
 
 ---
 
