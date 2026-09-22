@@ -1,0 +1,113 @@
+{
+  "device_note": "uses ~/.config/decisors/config.toml; expected device=cpu, provider=laya",
+  "other_bridges": [
+    {
+      "pid": 23463,
+      "rss_kb": 2183444
+    }
+  ],
+  "typed_decisions": "not loaded; not in cache; opt-in only",
+  "cloud": "not called",
+  "option_sweep_caveat": "Distractors were 'não corresponde a este pedido'. A hit at 77 options is not Banking77 and does not refute the ~20-option quality ceiling in referencia/laya/BENCHMARKS.md.",
+  "route_note": "Bench state has one ã and was classified English (language_undecided). Warmup sentence with cobrança routes to multilingual. Short Portuguese without diacritics routes to english.",
+  "load": {
+    "wall_ms": 117665.3,
+    "provider_elapsed_ms": 105748,
+    "model": "multilingual",
+    "warmup_ok": true
+  },
+  "rss_after_start_kb": 2203300,
+  "loaded": [
+    "multilingual"
+  ],
+  "latency_1_noul_ms": {
+    "n": 30,
+    "p50": 1300.1,
+    "p95": 1816.7,
+    "min": 1236.9,
+    "max": 1945.3
+  },
+  "batch": {
+    "1": {
+      "wall_ms": 1631.3,
+      "ms_per_question": 1631.3
+    },
+    "4": {
+      "wall_ms": 6349.0,
+      "ms_per_question": 1587.3
+    },
+    "8": {
+      "wall_ms": 10726.6,
+      "ms_per_question": 1340.8
+    },
+    "16": {
+      "wall_ms": 17188.5,
+      "ms_per_question": 1074.3
+    }
+  },
+  "deterministic": true,
+  "option_sweep": [
+    {
+      "options": 4,
+      "choice": "billing",
+      "hit": true,
+      "confidence": 0.323,
+      "wall_ms": 1628.2,
+      "model": "english"
+    },
+    {
+      "options": 10,
+      "choice": "billing",
+      "hit": true,
+      "confidence": 0.7535,
+      "wall_ms": 3010.3,
+      "model": "english"
+    },
+    {
+      "options": 20,
+      "choice": "billing",
+      "hit": true,
+      "confidence": 0.9996,
+      "wall_ms": 3769.4,
+      "model": "english"
+    },
+    {
+      "options": 40,
+      "choice": "billing",
+      "hit": true,
+      "confidence": 0.9977,
+      "wall_ms": 3746.4,
+      "model": "english"
+    },
+    {
+      "options": 77,
+      "choice": "billing",
+      "hit": true,
+      "confidence": 0.9988,
+      "wall_ms": 6292.5,
+      "model": "english"
+    }
+  ],
+  "rss_after_eval_kb": 2801076,
+  "routing": {
+    "ok": true,
+    "routes": {
+      "en": {
+        "model": "english",
+        "reason": "English Latin text"
+      },
+      "pt": {
+        "model": "english",
+        "reason": "English Latin text"
+      },
+      "hi": {
+        "model": "multilingual",
+        "reason": "non-Latin script (devanagari, 100% of letters); the English checkpoint cannot read it"
+      },
+      "ko": {
+        "model": "multilingual",
+        "reason": "non-Latin script (hangul, 100% of letters); the English checkpoint cannot read it"
+      }
+    }
+  }
+}
