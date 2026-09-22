@@ -10,7 +10,8 @@ def test_installs_self_contained_pi_adapter(tmp_path: Path) -> None:
     assert installed == target
     assert 'registerCommand("decision"' in text
     assert 'name: "decision_evaluate"' in text
-    assert 'spawn("decisors", ["bridge"]' in text
+    assert 'spawn(bridgeCommand(), ["bridge", "--daemon"]' in text
+    assert 'localBin = join(homedir(), ".local", "bin", "decisors")' in text
     assert "Enable cloud decisions for this session?" in text
     assert 'pi.on("session_shutdown"' in text
     assert 'from "typebox"' not in text

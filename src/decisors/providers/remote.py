@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 import urllib.error
 import urllib.request
@@ -23,9 +22,11 @@ def urllib_transport(
     body: bytes,
     timeout_seconds: float,
 ) -> dict[str, Any]:
+    if not url.startswith("https://"):
+        raise ProviderError("Remote decision endpoint must be https.")
     request = urllib.request.Request(url=url, data=body, headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:  # nosec B310
             raw = response.read()
     except urllib.error.HTTPError as exc:
         raise ProviderError(f"Remote decision request failed with HTTP {exc.code}.") from exc
@@ -113,16 +114,13 @@ class RemoteJevProvider:
 
         self.requests_started += 1
         start = time.perf_counter()
-        try:
-            raw = self.transport(
-                self.endpoint,
-                self._headers(key),
-                body,
-                self.settings.timeout_seconds,
-            )
-            result = validate_result(request, raw)
-        except Exception:
-            raise
+        raw = self.transport(
+            self.endpoint,
+            self._headers(key),
+            body,
+            self.settings.timeout_seconds,
+        )
+        result = validate_result(request, raw)
 
         self.requests_succeeded += 1
         usage = result.get("usage", {})
@@ -141,9 +139,12 @@ class RemoteJevProvider:
         return None
 
     def status(self) -> dict[str, Any]:
+        from ..config import get_credential
+
         return {
             "provider": self.name,
-            "ready": bool(os.environ.get(self.key_env, "").strip()),
+            # Same source as _key(): env OR auth store. Env-only reads lie when the key lives in a file.
+            "ready": bool(get_credential(self.name)),
             "configured_model": self.settings.model,
             "resolved_model": self.model,
             "model": self.model,

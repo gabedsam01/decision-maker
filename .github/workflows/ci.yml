@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   test:
@@ -37,3 +38,14 @@ jobs:
 
       - name: Run Tests
         run: uv run pytest
+
+      - name: Run JS tests
+        run: node --test tests/test_panel_keys.mjs
+
+      - name: Check lockfile
+        run: uv lock --check
+
+      - name: Build and smoke the package
+        run: |
+          uv build
+          uvx --from "$(ls dist/*.whl)" decisors --help

@@ -82,3 +82,21 @@ def test_remote_request_budget(monkeypatch: pytest.MonkeyPatch) -> None:
     provider.evaluate(REQUEST)
     with pytest.raises(ProviderError, match="request limit"):
         provider.evaluate(REQUEST)
+
+
+def test_status_ready_follows_credential_store_not_just_env(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    provider = OpenRouterProvider(Settings(provider="openrouter"))
+    assert provider.status()["ready"] is False
+
+    auth = tmp_path / ".pi" / "agent" / "auth.json"
+    auth.parent.mkdir(parents=True)
+    auth.write_text(json.dumps({"openrouter": {"key": "from-file"}}), encoding="utf-8")
+
+    status = provider.status()
+    assert status["ready"] is True
+    assert provider._key() == "from-file"

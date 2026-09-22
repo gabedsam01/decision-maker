@@ -6,7 +6,7 @@ Does not download or load a Laya checkpoint, and does not write config.
 from __future__ import annotations
 
 import statistics
-import subprocess
+import subprocess  # nosec B404  # argv-list lspci probe, no shell, 2s timeout
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -183,7 +183,9 @@ def _bench_matmul(device: str) -> dict[str, Any]:
 
 def pci_display_names() -> list[str]:
     try:
-        out = subprocess.check_output(["lspci", "-mm"], text=True, timeout=2, stderr=subprocess.DEVNULL)
+        out = subprocess.check_output(  # nosec  # constant argv, no shell, 2s timeout
+            ["lspci", "-mm"], text=True, timeout=2, stderr=subprocess.DEVNULL
+        )
     except (OSError, subprocess.SubprocessError):
         return []
     names: list[str] = []

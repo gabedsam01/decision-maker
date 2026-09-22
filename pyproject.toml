@@ -59,6 +59,8 @@ line-length = 110
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.mypy]
+# numpy stubs use PEP 695 type statements (3.12+ syntax); the supported floor is still
+# requires-python >= 3.11. Keep 3.12 here or mypy dies inside numpy's .pyi, not our code.
 python_version = "3.12"
 strict = true
 packages = ["decisors"]

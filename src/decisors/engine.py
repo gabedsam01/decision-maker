@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import platform
 import sys
+import threading
 from dataclasses import asdict, replace
 from typing import Any
 
@@ -38,8 +39,11 @@ class DecisionEngine:
         self.store = store or ConfigStore()
         self.settings = self.store.load()
         self._provider: DecisionProvider | None = None
+        self._judge: DecisionProvider | None = None
         self._ready = False
         self._active = False
+        self._warming = False
+        self._warmup_error: str | None = None
 
     def _new_provider(self) -> DecisionProvider:
         if self.settings.provider == "laya":
@@ -111,6 +115,12 @@ class DecisionEngine:
             },
         )
 
+    def _judge_provider(self) -> DecisionProvider:
+        # ponytail: one cached Laya judge for local referee scoring; a load costs ~67s each.
+        if self._judge is None:
+            self._judge = LayaProvider(replace(self.settings, provider="laya", model="auto"))
+        return self._judge
+
     def _conclude_local(self, params: dict[str, Any]) -> dict[str, Any]:
         from .referee import conclude_scored, expand_label, shape_text
 
@@ -118,14 +128,12 @@ class DecisionEngine:
         if not isinstance(options, list):
             raise ValidationError("options precisa ser uma lista.")
         str_options = [str(item) for item in options]
-        temporary = None
         if self.settings.provider == "laya":
             if not self._active:
                 raise NotStartedError("Decisors is stopped. Run /decision start before agent evaluations.")
             provider = self._get_provider()
         else:
-            temporary = LayaProvider(replace(self.settings, provider="laya", model="auto"))
-            provider = temporary
+            provider = self._judge_provider()
         shaped, _question, portuguese = shape_text(
             params.get("state") or "",
             str(params.get("instructions") or ""),
@@ -141,11 +149,7 @@ class DecisionEngine:
             )
             return float(result["answers"]["q"]["noul"])
 
-        try:
-            return conclude_scored(str_options, score)
-        finally:
-            if temporary is not None:
-                temporary.stop()
+        return conclude_scored(str_options, score)
 
     def _cloud_once(self, params: dict[str, Any]) -> dict[str, Any]:
         provider_name = str(params.get("provider") or "")
@@ -190,18 +194,45 @@ class DecisionEngine:
         if not self._ready:
             self.initialize()
         self._active = True
+        self.settings = self.store.update(active=True)
+        return self.status()
+
+    def start_async(self) -> dict[str, Any]:
+        """Kick warm-up in a background thread and return immediately (warming state)."""
+        if self._warming or self._active:
+            return self.status()
+        self._warming = True
+        self._warmup_error = None
+
+        def run() -> None:
+            try:
+                self.initialize()
+                self._active = True
+                self.settings = self.store.update(active=True)
+            except Exception as exc:
+                self._warmup_error = f"{type(exc).__name__}: warm-up failed."
+            finally:
+                self._warming = False
+
+        threading.Thread(target=run, name="decisors-warmup", daemon=True).start()
         return self.status()
 
     def stop(self) -> dict[str, Any]:
         self._active = False
+        self.settings = self.store.update(active=False)
         if self._provider is not None:
             self._provider.stop()
         self._provider = None
+        if self._judge is not None:
+            self._judge.stop()
+            self._judge = None
         self._ready = False
         return self.status()
 
     def evaluate(self, state: Any, questions: Any) -> DecisionResult:
         if not self._active:
+            if self._warming:
+                raise NotStartedError("Decisors warm-up em andamento; tente de novo em instantes.")
             raise NotStartedError("Decisors is stopped. Run /decision start before agent evaluations.")
         request = DecisionRequest.from_value(state, questions)
         return self._get_provider().evaluate(request)
@@ -226,21 +257,24 @@ class DecisionEngine:
             if self._provider is not None:
                 self._provider.stop()
             self._provider = None
+            if self._judge is not None:
+                self._judge.stop()
+                self._judge = None
         return self.status()
 
     def status(self) -> dict[str, Any]:
-        provider_status = (
-            self._provider.status()
-            if self._provider is not None
-            else {
-                "provider": self.settings.provider,
-                "ready": False,
-                "model": self.settings.model,
-            }
-        )
+        if self._provider is not None:
+            provider_status = self._provider.status()
+        else:
+            # Light remote-aware status: same credential source as the providers, no model load.
+            name = self.settings.provider
+            ready = bool(get_credential(name)) if name != "laya" else False
+            provider_status = {"provider": name, "ready": ready, "model": self.settings.model}
         return {
             "active": self._active,
             "ready": self._ready,
+            "warming": self._warming,
+            "warmup_error": self._warmup_error,
             "initialized": self.settings.initialized,
             "config_path": str(self.store.path),
             "config": asdict(self.settings),
@@ -249,8 +283,6 @@ class DecisionEngine:
         }
 
     def _catalog(self) -> dict[str, Any]:
-        from .config import get_credential
-
         try:
             cached = cached_checkpoints()
         except OSError:

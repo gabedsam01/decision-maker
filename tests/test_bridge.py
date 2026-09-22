@@ -15,6 +15,9 @@ class FakeEngine:
     def start(self) -> dict[str, Any]:
         return {"active": True}
 
+    def start_async(self) -> dict[str, Any]:
+        return {"active": False, "warming": True}
+
     def stop(self) -> dict[str, Any]:
         return {"active": False}
 
@@ -55,6 +58,7 @@ def test_probe_dispatch() -> None:
 def test_dispatch_and_shutdown() -> None:
     server = BridgeServer(FakeEngine())  # type: ignore[arg-type]
     assert server.handle({"id": "1", "method": "ping"})["ok"] is True
+    assert server.handle({"id": "w", "method": "warm"})["result"]["warming"] is True
     response = server.handle(
         {"id": "2", "method": "evaluate", "params": {"state": "x", "questions": {"q": {}}}}
     )

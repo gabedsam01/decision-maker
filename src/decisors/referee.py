@@ -10,10 +10,8 @@ from .errors import ValidationError
 
 LOCAL_CAP = 20
 CLOUD_CAP = 255
-OTHER = "nenhuma destas"
 MIN_SCORE = 0.5
 MIN_GAP = 0.2
-Choose = Callable[[list[str]], str]
 Score = Callable[[str], float]
 
 
@@ -263,47 +261,6 @@ def conclude_scored(options: list[str], score: Score) -> dict[str, Any]:
     result["rounds"] = rounds
     result["mode"] = "local_loop" if len(_unique(options)) > LOCAL_CAP else "local"
     return result
-
-
-def conclude_local(options: list[str], choose: Choose) -> dict[str, Any]:
-    pending = _unique(options)
-    if len(pending) < 2:
-        raise ValidationError("Precisa de pelo menos 2 opções.")
-    if len(pending) > CLOUD_CAP:
-        raise ValidationError("No máximo 255 opções.")
-    rounds = 0
-    # ponytail: tournament of 19, not a learned shortlist. Upgrade path is an explicit cloud yes.
-    while len(pending) > LOCAL_CAP:
-        rounds += 1
-        if rounds > 16:
-            raise ValidationError("O loop local não concluiu.")
-        winners: list[str] = []
-        for chunk in _chunks(pending, LOCAL_CAP - 1):
-            if len(chunk) == 1:
-                winners.append(chunk[0])
-                continue
-            asked = chunk + [OTHER]
-            if len(asked) > LOCAL_CAP:
-                raise ValidationError("Rodada local passou de 20 opções.")
-            picked = choose(asked)
-            if picked not in asked:
-                raise ValidationError("A rodada devolveu uma opção que não estava na lista.")
-            if picked in chunk:
-                winners.append(picked)
-        if not winners:
-            raise ValidationError("Nenhuma opção sobrou. A rodada recusou todas.")
-        pending = list(dict.fromkeys(winners))
-    rounds += 1
-    chosen = pending[0] if len(pending) == 1 else choose(pending)
-    if chosen not in pending:
-        raise ValidationError("A rodada devolveu uma opção que não estava na lista.")
-    return {
-        "choice": chosen,
-        "rounds": rounds,
-        "mode": "local_loop" if len(_unique(options)) > LOCAL_CAP else "local",
-        "say": f"Ficou em {chosen}. Na máquina.",
-        "authorized": False,
-    }
 
 
 def _fixed(verdict: str, say: str) -> dict[str, Any]:

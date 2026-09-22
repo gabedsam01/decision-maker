@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
+import { createConnection } from "node:net";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 
@@ -28,73 +29,76 @@ function decisionText(result) {
 }
 const DEFAULT_TIMEOUT_MS = 30000;
 const INIT_TIMEOUT_MS = 15 * 60 * 1000;
+const SOCKET_PATH = process.env.XDG_RUNTIME_DIR
+  ? join(process.env.XDG_RUNTIME_DIR, "decisors", "bridge.sock")
+  : join("/tmp", "decisors-" + (process.getuid?.() ?? "0"), "bridge.sock");
+
+function bridgeCommand() {
+  // Credentials are resolved by the Python core (env + auth store); the adapter stays thin.
+  const localBin = join(homedir(), ".local", "bin", "decisors");
+  return existsSync(localBin) ? localBin : "decisors";
+}
+
+function spawnDaemon() {
+  const child = spawn(bridgeCommand(), ["bridge", "--daemon"], { detached: true, stdio: "ignore" });
+  child.unref();
+}
 
 class BridgeClient {
   constructor() {
-    this.child = undefined;
+    this.socket = undefined;
     this.lines = undefined;
     this.pending = new Map();
     this.nextId = 1;
+    this.connecting = undefined;
   }
 
-  ensureStarted() {
-    if (this.child && !this.child.killed) return;
-    const env = { ...process.env };
-    try {
-      const authPath = join(homedir(), ".pi", "agent", "auth.json");
-      if (existsSync(authPath)) {
-        const auth = JSON.parse(readFileSync(authPath, "utf-8"));
-        if (!env.OPENROUTER_API_KEY && auth?.openrouter?.key) {
-          env.OPENROUTER_API_KEY = auth.openrouter.key;
-        }
-        if (!env.TYPESAFE_API_KEY && auth?.typesafe?.key) {
-          env.TYPESAFE_API_KEY = auth.typesafe.key;
-        }
-      }
-    } catch {}
-    const child = spawn("decisors", ["bridge"], {
-      stdio: ["pipe", "pipe", "pipe"],
-      env,
+  connect() {
+    if (this.socket) return Promise.resolve();
+    if (this.connecting) return this.connecting;
+    this.connecting = new Promise((resolve, reject) => {
+      const attempt = (left, spawned) => {
+        const socket = createConnection(SOCKET_PATH);
+        socket.once("connect", () => {
+          this.socket = socket;
+          this.lines = createInterface({ input: socket });
+          this.lines.on("line", (line) => {
+            let message;
+            try {
+              message = JSON.parse(line);
+            } catch {
+              this.failAll(new Error("Decisors bridge returned malformed JSON."));
+              return;
+            }
+            const pending = this.pending.get(String(message.id));
+            if (!pending) return;
+            this.pending.delete(String(message.id));
+            clearTimeout(pending.timer);
+            pending.signal?.removeEventListener("abort", pending.onAbort);
+            if (message.ok) pending.resolve(message.result);
+            else pending.reject(new Error(message.error?.message || "Decisors bridge request failed."));
+          });
+          socket.on("close", () => {
+            this.socket = undefined;
+            this.failAll(new Error("Decisors bridge connection closed."));
+          });
+          this.connecting = undefined;
+          resolve();
+        });
+        socket.once("error", () => {
+          socket.destroy();
+          if (left <= 0) {
+            this.connecting = undefined;
+            reject(new Error("Decisors bridge unavailable. Run `decisors start` and retry."));
+            return;
+          }
+          if (!spawned) spawnDaemon();
+          setTimeout(() => attempt(left - 1, true), 250);
+        });
+      };
+      attempt(12, false);
     });
-    this.child = child;
-    this.lines = createInterface({ input: child.stdout });
-    // Laya/Hugging Face may write model-download progress to stderr. Always drain it
-    // so a full stderr pipe can never deadlock the persistent bridge.
-    child.stderr?.on("data", () => {});
-
-    this.lines.on("line", (line) => {
-      let message;
-      try {
-        message = JSON.parse(line);
-      } catch {
-        this.failAll(new Error("Decisors bridge returned malformed JSON."));
-        return;
-      }
-      const pending = this.pending.get(String(message.id));
-      if (!pending) return;
-      this.pending.delete(String(message.id));
-      clearTimeout(pending.timer);
-      pending.signal?.removeEventListener("abort", pending.onAbort);
-      if (message.ok) pending.resolve(message.result);
-      else pending.reject(new Error(message.error?.message || "Decisors bridge request failed."));
-    });
-
-    child.on("error", (error) => {
-      this.failAll(
-        new Error(
-          error?.code === "ENOENT"
-            ? "decisors executable not found in PATH. Install the Python package first."
-            : "Could not start decisors bridge: " + error.message,
-        ),
-      );
-      this.child = undefined;
-    });
-
-    child.on("exit", (code, signal) => {
-      this.failAll(new Error("Decisors bridge exited (" + (signal || code || "unknown") + ")."));
-      this.child = undefined;
-      this.lines = undefined;
-    });
+    return this.connecting;
   }
 
   failAll(error) {
@@ -106,59 +110,43 @@ class BridgeClient {
     this.pending.clear();
   }
 
-  terminate(error) {
-    if (this.child && !this.child.killed) this.child.kill("SIGTERM");
-    this.failAll(error);
-    this.child = undefined;
-  }
-
   request(method, params = {}, options = {}) {
     const { signal, timeoutMs = DEFAULT_TIMEOUT_MS } = options;
-    this.ensureStarted();
-    if (!this.child?.stdin) return Promise.reject(new Error("Decisors bridge is unavailable."));
-    const id = String(this.nextId++);
+    return this.connect().then(() => {
+      const id = String(this.nextId++);
+      return new Promise((resolve, reject) => {
+        const onAbort = () => {
+          this.pending.delete(id);
+          reject(new Error("Decisors request aborted."));
+        };
+        if (signal?.aborted) {
+          onAbort();
+          return;
+        }
+        signal?.addEventListener("abort", onAbort, { once: true });
 
-    return new Promise((resolve, reject) => {
-      const onAbort = () => {
-        this.pending.delete(id);
-        this.terminate(new Error("Decisors request aborted."));
-        reject(new Error("Decisors request aborted."));
-      };
-      if (signal?.aborted) {
-        onAbort();
-        return;
-      }
-      signal?.addEventListener("abort", onAbort, { once: true });
+        const timer = setTimeout(() => {
+          this.pending.delete(id);
+          reject(new Error("Decisors request timed out after " + timeoutMs + " ms."));
+        }, timeoutMs);
 
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        this.terminate(new Error("Decisors request timed out after " + timeoutMs + " ms."));
-        reject(new Error("Decisors request timed out after " + timeoutMs + " ms."));
-      }, timeoutMs);
-
-      this.pending.set(id, { resolve, reject, timer, signal, onAbort });
-      try {
-        this.child.stdin.write(JSON.stringify({ id, method, params }) + "\n");
-      } catch (error) {
-        clearTimeout(timer);
-        signal?.removeEventListener("abort", onAbort);
-        this.pending.delete(id);
-        reject(error);
-      }
+        this.pending.set(id, { resolve, reject, timer, signal, onAbort });
+        try {
+          this.socket.write(JSON.stringify({ id, method, params }) + "\n");
+        } catch (error) {
+          clearTimeout(timer);
+          signal?.removeEventListener("abort", onAbort);
+          this.pending.delete(id);
+          reject(error);
+        }
+      });
     });
   }
 
-  close() {
-    if (!this.child || this.child.killed) return;
-    try {
-      this.child.stdin?.write(
-        JSON.stringify({ id: String(this.nextId++), method: "shutdown", params: {} }) + "\n",
-      );
-    } catch {}
-    const child = this.child;
-    setTimeout(() => {
-      if (!child.killed) child.kill("SIGTERM");
-    }, 500).unref();
+  detach() {
+    // Keep-active: the daemon survives the session and self-stops on idle.
+    this.socket?.destroy();
+    this.socket = undefined;
   }
 }
 
@@ -185,7 +173,6 @@ function formatDuration(seconds) {
 }
 
 const KITTY_ARROWS = { 57419: "up", 57420: "down", 57418: "right", 57417: "left" };
-const ROWS = ["provider", "model", "device", "threshold", "requests"];
 const PROVIDERS = ["laya", "typesafe", "openrouter"];
 const DEVICES = ["auto", "cpu", "cuda", "mps"];
 
@@ -247,7 +234,7 @@ export function footerText(status) {
   const resolved = ps.resolved_model || catalog.warmup_model;
   const loaded = Array.isArray(ps.loaded) && ps.loaded.length ? ps.loaded.join("+") : "";
   const model = configured === "auto" && resolved ? configured + "→" + resolved : (ps.model || configured);
-  const active = status?.active ? "on" : "off";
+  const active = status?.active ? "on" : status?.warming ? "warming" : "off";
   const cred = catalog.credentials || {};
   const jev = provider === "laya" && cred.openrouter ? " · jev key unused" : "";
   const ram = loaded ? " · ram " + loaded : "";
@@ -277,11 +264,6 @@ function paint(theme, role, text) {
     return text;
   }
   return text;
-}
-
-function clip(text, width) {
-  if (text.length <= width) return text;
-  return text.slice(0, Math.max(0, width - 1)) + "…";
 }
 
 const SECTIONS = ["provider", "model", "device", "threshold", "requests"];
@@ -969,7 +951,13 @@ export default function decisorsExtension(pi) {
 
   pi.on("session_start", async (_event, ctx) => {
     try {
-      const status = await bridge.request("status", {}, { timeoutMs: 5000 });
+      let status = await bridge.request("status", {}, { timeoutMs: 5000 });
+      if (status.active) {
+        // keep-active: the daemon survived with the model hot; nothing to do.
+      } else if (!status.warming && status.config?.active) {
+        // previous session was active: auto-restart via non-blocking warm-up.
+        status = await bridge.request("warm", {}, { timeoutMs: 5000 });
+      }
       ctx.ui.setStatus?.("decisors", footerText(status));
     } catch {
       ctx.ui.setStatus?.("decisors", "decision: unavailable");
@@ -978,6 +966,6 @@ export default function decisorsExtension(pi) {
 
   pi.on("session_shutdown", async () => {
     cloudConsent = false;
-    bridge.close();
+    bridge.detach(); // keep-active: daemon self-stops on idle; `decisors kill` forces it down.
   });
 }

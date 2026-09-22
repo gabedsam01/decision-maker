@@ -31,7 +31,7 @@ def get_credential(name: str) -> str:
             elif isinstance(entry, str) and entry.strip():
                 return entry.strip()
         except Exception:
-            pass
+            pass  # nosec B110  # unreadable auth store means no credential
     return ""
 
 
@@ -45,6 +45,7 @@ class Settings:
     timeout_seconds: float = 15.0
     max_requests_per_session: int = 20
     initialized: bool = False
+    active: bool = False
 
     def validated(self) -> Settings:
         if self.provider not in PROVIDERS:

@@ -23,12 +23,15 @@ def _parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("init", help="Prepare the selected provider and model")
-    sub.add_parser("start", help="Prepare/start once; persistent lifecycle is normally owned by Pi")
-    sub.add_parser("stop", help="Stop a local engine instance")
-    sub.add_parser("status", help="Show current configuration/status")
+    sub.add_parser("start", help="Start the background bridge and warm the model (non-blocking)")
+    sub.add_parser("stop", help="Stop the engine and unload local weights")
+    sub.add_parser("status", help="Show live daemon status (or config-only when the daemon is off)")
     sub.add_parser("test", help="Run one explicit sample decision")
     sub.add_parser("doctor", help="Check runtime, config, model package, and credentials")
-    sub.add_parser("bridge", help=argparse.SUPPRESS)
+    bridge = sub.add_parser("bridge", help=argparse.SUPPRESS)
+    bridge.add_argument("--daemon", action="store_true", help=argparse.SUPPRESS)
+    kill = sub.add_parser("kill", help="Shut down the background bridge daemon")
+    kill.add_argument("--force", action="store_true", help="SIGKILL via pidfile when graceful fails")
 
     config = sub.add_parser("config", help="Show or change provider/model/device settings")
     config.add_argument("--provider", choices=["laya", "typesafe", "openrouter"])
@@ -61,6 +64,10 @@ def _config_changes(args: argparse.Namespace) -> dict[str, Any]:
 def run(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.command == "bridge":
+        if args.daemon:
+            from .bridge import serve_socket
+
+            return serve_socket()
         return serve()
     if args.command == "integrate":
         path = install_pi_extension()
@@ -89,18 +96,72 @@ def run(argv: list[str] | None = None) -> int:
     if args.command == "init":
         _print(engine.initialize())
     elif args.command == "start":
-        result = engine.start()
-        result["note"] = "Standalone CLI exits after this command; Pi keeps the bridge persistent."
-        _print(result)
+        _print(_daemon_start())
     elif args.command == "stop":
-        _print(engine.stop())
+        from .bridge import call_daemon
+
+        live = call_daemon("stop")
+        _print(live["result"] if live and live.get("ok") else engine.stop())
+    elif args.command == "kill":
+        _print(_daemon_kill(force=args.force))
     elif args.command == "status":
-        _print(engine.status())
+        _print(_daemon_status(engine))
     elif args.command == "test":
         _print(engine.test())
     elif args.command == "doctor":
         _print(engine.doctor())
     return 0
+
+
+def _ensure_daemon() -> dict[str, Any] | None:
+    from .bridge import call_daemon, spawn_daemon, wait_for_socket
+
+    reply = call_daemon("status")
+    if reply is None:
+        spawn_daemon()
+        if not wait_for_socket():
+            return None
+        reply = call_daemon("status")
+    if reply and reply.get("ok"):
+        result: dict[str, Any] = reply["result"]
+        return result
+    return None
+
+
+def _daemon_start() -> dict[str, Any]:
+    from .bridge import call_daemon
+
+    if _ensure_daemon() is None:
+        return {"ok": False, "error": "BridgeDaemonError", "message": "daemon did not start"}
+    warm = call_daemon("warm")
+    result: dict[str, Any] = warm["result"] if warm and warm.get("ok") else {}
+    result["note"] = "Warm-up runs in the background; the model is available as soon as it finishes."
+    return result
+
+
+def _daemon_status(engine: DecisionEngine) -> dict[str, Any]:
+    from .bridge import call_daemon
+
+    live = call_daemon("status")
+    if live and live.get("ok"):
+        result: dict[str, Any] = live["result"]
+        return result
+    status = engine.status()
+    status["note"] = (
+        "Bridge daemon off: provider_status reflects configuration only. "
+        "Run `decisors start` to warm the model."
+    )
+    return status
+
+
+def _daemon_kill(force: bool) -> dict[str, Any]:
+    from .bridge import call_daemon, force_kill_daemon
+
+    reply = call_daemon("shutdown")
+    if reply and reply.get("ok"):
+        return {"shutdown": True, "forced": False}
+    killed = force_kill_daemon() if force else False
+    return {"shutdown": bool(killed), "forced": bool(killed)}
 
 
 def main() -> None:
