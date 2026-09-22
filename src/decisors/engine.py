@@ -203,12 +203,14 @@ class DecisionEngine:
             return self.status()
         self._warming = True
         self._warmup_error = None
+        # Persist intent first: a crash mid warm-up still auto-restarts next
+        # session, and settings.active is truthful the moment warming reports.
+        self.settings = self.store.update(active=True)
 
         def run() -> None:
             try:
                 self.initialize()
                 self._active = True
-                self.settings = self.store.update(active=True)
             except Exception as exc:
                 self._warmup_error = f"{type(exc).__name__}: warm-up failed."
             finally:
