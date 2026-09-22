@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 import decisors.engine as engine_module
-from decisors.bridge import BridgeServer, call_daemon, serve_socket
+from decisors.bridge import BridgeServer, call_daemon, serve_socket, wait_for_socket
 from decisors.config import ConfigStore
 from decisors.engine import DecisionEngine
 from decisors.errors import NotStartedError
@@ -50,10 +50,9 @@ def test_socket_daemon_round_trip(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         daemon=True,
     )
     thread.start()
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline and not sock.exists():
-        time.sleep(0.02)
-    assert sock.exists()
+    # Same readiness gate the production clients use (bind creates the socket
+    # file before listen; a bare connect in that window gets ECONNREFUSED).
+    assert wait_for_socket(timeout=5, path=sock)
 
     reply = call_daemon("ping", path=sock)
     assert reply["ok"] is True
