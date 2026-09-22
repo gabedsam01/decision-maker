@@ -9,7 +9,7 @@ Decisors brings fast, provider-agnostic **System One** judgment to AI agents. It
 ### Option A: Via `uv` (Recommended)
 ```bash
 # Install as a global CLI tool
-uv tool install decisors
+uv tool install decision-maker
 
 # Or install from local repository
 git clone git@github.com:gabedsam01/decision-maker.git
@@ -19,7 +19,7 @@ uv tool install .
 
 ### Option B: Via `pip`
 ```bash
-pip install decisors
+pip install decision-maker
 ```
 
 ---

@@ -1,5 +1,5 @@
 {
-  "name": "decisors",
+  "name": "decision-maker",
   "version": "0.1.0",
   "description": "Typed System One decisions for AI agents — Pi adapter and installer for the decisors binary (Laya local by default, Jev via TypeSafe/OpenRouter).",
   "type": "module",

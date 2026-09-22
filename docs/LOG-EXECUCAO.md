@@ -66,3 +66,9 @@ Regra de evidência: nenhuma afirmação de teste/build/edição sem a saída da
 - Guard local (guard-git) bloqueou commit direto no `main` → fluxo padrão: branch `feat/session-lifecycle` + commit `feat: session lifecycle daemon, audit fixes, and npm/PyPI packaging` + push.
 - `gh` tinha a conta ativa errada (`gabrielsampaiosouza`, sem acesso ao repo) → `gh auth switch --user gabedsam01` e **PR #1**: https://github.com/gabedsam01/decision-maker/pull/1 (CI disparado por `pull_request`: pytest 3.11/3.12/3.13 · ruff · mypy · node · `uv lock --check` · smoke do wheel).
 - `workflow_dispatch` adicionado ao ci.yml para trigger manual; README: `engine.init()` inexistente corrigido para `initialize()` + comandos `start`/`status`/`kill` (itens 5 e parcialmente 1 da lista de adiados resolvidos aqui).
+
+## Etapa 7 — Distribuição `decision-maker` + publicação PyPI/npm no CI
+
+- Decisão do usuário: nome de distribuição/registry = **`decision-maker`** (nome do repo); módulo Python e binário CLI continuam **`decisors`** (sem churn; `pip install decision-maker` → comando `decisors`). PyPI normaliza `decision_maker` ≡ `decision-maker`, então o pending publisher criado por ele já bate sem edição.
+- `ci.yml`: trigger `release: types: [published]` + `workflow_dispatch`; job `publish` (needs: test) com `id-token: write` — PyPI via **Trusted Publishing OIDC** (`pypa/gh-action-pypi-publish`, sem token) e npm via `NPM_TOKEN` (`npm publish --access public --provenance`), com skip gracioso quando o secret não existe.
+- Pendência do usuário: criar secret `NPM_TOKEN` (token granular npm com permissão de publish) para a 1ª publicação no npm; trigger = GitHub Release (ex.: `v0.1.0`) ou execução manual do workflow.
